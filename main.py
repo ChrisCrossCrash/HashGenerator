@@ -29,6 +29,7 @@ COPY = 'Copy'
 GEN_FROM_TEXT = 'Generate from text'
 GEN_FROM_FILE = 'Generate from file'
 BUTTON_WIDTH = max(len(BROWSE), len(GET_HASH), len(COPY))
+BUFFER_SIZE = 65536
 
 ICON = r'lock.ico'
 
@@ -42,13 +43,9 @@ class App(tk.Frame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # 'plaintext' should always be the variable used to get a hash
-        self.plaintext = tk.StringVar()
-        self.plaintext.trace('w', lambda *_: self.update_hash(self.plaintext.get()))
         self.hashtext= tk.StringVar()
+        self.filename = tk.StringVar() # TODO: get rid of this
         self.file = None
-        self.filename = tk.StringVar()
-        self.filename.trace('w', lambda *_: self.update_hash(self.file.read()))
 
         self.alg_mode = tk.StringVar()
         self.alg_mode.set('sha256')
@@ -67,16 +64,33 @@ class App(tk.Frame):
         self.file_input.pack(fill='x')
         self.output.pack(fill='x')
 
-    def update_hash(self, _input):
-        print(_input)
-        # changes hashtext based on string input
-        hasher = hashlib.new(self.alg_mode.get(), bytes(_input, 'utf-8'))
+    def hash_alg_changed(self):
+        if self.input_mode.get() == 'text':
+            self.get_hash_clicked()
+        else:
+            self.get_file_hash()
+
+    def get_hash_clicked(self):
+        self.input_mode.set('text')
+        txt = self.txt_input.entry.get('1.0', 'end-1c')
+        self.hashtext.set(hashlib.new(self.alg_mode.get(), bytes(txt, 'utf-8')).hexdigest())
+
+    def browse_clicked(self):
+        self.input_mode.set('file')
+        self.file = filedialog.askopenfile(mode='rb')
+        self.get_file_hash()
+
+    def get_file_hash(self):
+        hasher = hashlib.new(self.alg_mode.get())
+        buffer = self.file.read(BUFFER_SIZE)
+        self.filename.set(self.file.name)
+        while buffer:
+            hasher.update(buffer)
+            buffer = self.file.read(BUFFER_SIZE)
         self.hashtext.set(hasher.hexdigest())
 
-    def open_file(self):
-        self.file = filedialog.askopenfile(mode='r')
-        if self.file:
-            self.filename.set(self.file.name)
+    def copy_clicked(self):
+        self.update_clipboard()
 
     def update_clipboard(self):
         self.clipboard_clear()
@@ -92,7 +106,11 @@ class AlgorithmOptions(tk.Frame):
         algorithms.sort()
         for algorithm in algorithms:
             if 'shake' not in algorithm:  # 'shake' algorithms need a length specified, so they are excluded.
-                button = tk.Radiobutton(self, text=algorithm, variable=self.parent.alg_mode, value=algorithm)
+                button = tk.Radiobutton(self,
+                                        text=algorithm,
+                                        variable=self.parent.alg_mode,
+                                        value=algorithm,
+                                        command=parent.hash_alg_changed)
                 self.buttons.append(button)
 
     def pack(self, *args, **kwargs):
@@ -106,16 +124,14 @@ class TxtInput(tk.Frame):
         super().__init__(parent, *args, **kwargs)
         self.parent = parent
 
-        self.radio_btn = tk.Radiobutton(self, text=GEN_FROM_TEXT, variable=self.parent.input_mode, value='text')
         self.entry = scrolledtext.ScrolledText(self, height=5, width=64)
         self.btn = tk.Button(self,
                              text=GET_HASH,
                              width=BUTTON_WIDTH,
-                             command=lambda: self.parent.plaintext.set(self.entry.get('1.0', 'end-1c')))
+                             command=parent.get_hash_clicked)
 
     def pack(self, *args, **kwargs):
         super().pack(*args, **kwargs)
-        self.radio_btn.pack(anchor='w', side='top')
         self.entry.pack(side='left', fill='x', expand=True)
         self.btn.pack(side='right', fill='y')
 
@@ -124,13 +140,11 @@ class FileInput(tk.Frame):
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.parent = parent
-        self.radio_btn = tk.Radiobutton(self, text=GEN_FROM_FILE, variable=self.parent.input_mode, value='file')
         self.entry = tk.Entry(self, state='readonly', textvariable=parent.filename)
-        self.button = tk.Button(self, text=BROWSE, width=BUTTON_WIDTH, command=parent.open_file)
+        self.button = tk.Button(self, text=BROWSE, width=BUTTON_WIDTH, command=parent.browse_clicked)
 
     def pack(self, *args, **kwargs):
         super().pack(*args, **kwargs)
-        self.radio_btn.pack(anchor='w')
         self.button.pack(side='right')
         self.entry.pack(side='right', fill='x', expand=True)
 
@@ -140,7 +154,7 @@ class Output(tk.Frame):
         super().__init__(parent, *args, **kwargs)
         self.parent = parent
         self.entry = tk.Entry(self, state='readonly', textvariable=parent.hashtext)
-        self.button = tk.Button(self, text=COPY, width=BUTTON_WIDTH, command=parent.update_clipboard)
+        self.button = tk.Button(self, text=COPY, width=BUTTON_WIDTH, command=parent.copy_clicked)
 
     def pack(self, *args, **kwargs):
         super().pack(*args, **kwargs)
