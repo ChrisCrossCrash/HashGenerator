@@ -1,2 +1,2 @@
 # HashGenerator
-Hash Generator is a simple GUI application capable of generating SHA-256 and MD5 digests from files or text.
+Hash Generator is a simple GUI application capable of generating secure hashes from all available hash algorithms in Python's hashlib module. It also allows the user to verify the secure hash against a user-provided value.
